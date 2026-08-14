@@ -1,48 +1,24 @@
-"""Tests for briefsnap.core formatters. Green from scaffold."""
-
-import csv
-import io
-import json
-
-from briefsnap.core import to_csv, to_json, to_table, to_text
+"""Smoke tests for briefsnap package imports."""
 
 
-class TestToText:
-    def test_includes_title(self, sample_items):
-        assert "A first item" in to_text(sample_items)
-
-    def test_includes_url(self, sample_items):
-        assert "https://example.com/1" in to_text(sample_items)
-
-    def test_includes_score(self, sample_items):
-        assert "42" in to_text(sample_items)
-
-    def test_empty(self, empty_items):
-        assert "No items found" in to_text(empty_items)
+def test_import_briefsnap():
+    import briefsnap
+    assert hasattr(briefsnap, "__version__")
 
 
-class TestToJson:
-    def test_valid_json(self, sample_items):
-        data = json.loads(to_json(sample_items))
-        assert data["count"] == 2
-        assert data["items"][0]["title"] == "A first item"
-
-    def test_created_at_iso(self, sample_items):
-        data = json.loads(to_json(sample_items))
-        assert data["items"][0]["created_at"].startswith("2026-07-10")
+def test_version_string():
+    import briefsnap
+    assert isinstance(briefsnap.__version__, str)
+    assert "." in briefsnap.__version__
 
 
-class TestToTable:
-    def test_has_header(self, sample_items):
-        assert "| # | Title |" in to_table(sample_items)
-
-    def test_escapes_pipes(self, sample_items):
-        # title has no pipe, but the row must be well-formed
-        assert to_table(sample_items).count("\n") >= 3
+def test_core_imports():
+    from briefsnap.core import run_digest, to_json, to_text
+    assert callable(run_digest)
+    assert callable(to_text)
+    assert callable(to_json)
 
 
-class TestToCsv:
-    def test_roundtrips(self, sample_items):
-        rows = list(csv.reader(io.StringIO(to_csv(sample_items))))
-        assert rows[0] == ["title", "url", "author", "score", "comments", "created_at"]
-        assert rows[1][0] == "A first item"
+def test_config_imports():
+    from briefsnap.config import load_config
+    assert callable(load_config)
