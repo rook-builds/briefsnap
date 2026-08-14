@@ -1,35 +1,26 @@
 """Shared fixtures for briefsnap tests."""
-
-from datetime import datetime, timezone
-
 import pytest
 
-from briefsnap.core import Item
+
+@pytest.fixture
+def base_cfg():
+    """Minimal config with all sources disabled (HN too)."""
+    return {
+        "hackersnap": {"enabled": False, "limit": 5, "type": "top"},
+        "feedsnap":   {"enabled": False, "feeds": []},
+        "bskysnap":   {"enabled": False, "handles": []},
+        "reposnap":   {"enabled": False, "repos": []},
+        "arxivsnap":  {"enabled": False, "queries": []},
+    }
 
 
 @pytest.fixture
-def sample_items():
-    return [
-        Item(
-            title="A first item",
-            url="https://example.com/1",
-            author="alice",
-            score=42,
-            comments=5,
-            created_at=datetime(2026, 7, 10, 17, 43, 30, tzinfo=timezone.utc),
-            body="Some body text.",
-        ),
-        Item(
-            title="A second item, with commas",
-            url="https://example.com/2",
-            author="bob",
-            score=100,
-            comments=20,
-            created_at=datetime(2026, 7, 9, 12, 0, 0, tzinfo=timezone.utc),
-        ),
-    ]
-
-
-@pytest.fixture
-def empty_items():
-    return []
+def hn_only_cfg():
+    """Config with only HN enabled."""
+    return {
+        "hackersnap": {"enabled": True, "limit": 3, "type": "top"},
+        "feedsnap":   {"enabled": False, "feeds": []},
+        "bskysnap":   {"enabled": False, "handles": []},
+        "reposnap":   {"enabled": False, "repos": []},
+        "arxivsnap":  {"enabled": False, "queries": []},
+    }
