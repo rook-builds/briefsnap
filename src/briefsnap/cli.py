@@ -1,52 +1,65 @@
-"""briefsnap CLI — Morning briefing aggregator — one command pulls HN, RSS, Bluesky, GitHub, and arXiv into a single digest"""
+"""briefsnap CLI — morning briefing aggregator."""
+from __future__ import annotations
 
 import sys
 
 import click
 
-from .core import fetch, to_csv, to_json, to_table, to_text
+from .config import load_config
+from .core import run_digest, to_json, to_text
 from .introspect import get_introspect_json, get_skill_md
 
 _ACLI_COMMANDS = {"introspect", "skill"}
 
 
-def _handle_acli_command(cmd: str) -> None:
-    if cmd == "introspect":
-        print(get_introspect_json())
-    elif cmd == "skill":
-        print(get_skill_md())
-
-
 @click.command()
-@click.argument("sources", required=False, default=None)
-@click.option("--limit", "-n", default=10, show_default=True, help="How many items to fetch.")
+@click.argument("cmd", required=False, default=None)
+@click.option("--config", "-c", "config_path", default=None, help="Path to TOML config file.")
+@click.option("--hn", default=None, type=int, help="Include N Hacker News top stories.")
+@click.option("--rss", multiple=True, help="RSS feed URL(s) to include.")
+@click.option("--bsky", multiple=True, help="Bluesky handle(s) to include.")
+@click.option("--repo", multiple=True, help="GitHub repo(s) to include (owner/name).")
+@click.option("--arxiv", multiple=True, help="arXiv search query/queries.")
 @click.option(
-    "--output",
-    "-o",
+    "--output", "-o",
     default="text",
     show_default=True,
-    type=click.Choice(["text", "json", "table", "csv"]),
+    type=click.Choice(["text", "json"]),
     help="Output format.",
 )
-def main(sources, limit, output):
-    """Morning briefing aggregator — one command pulls HN, RSS, Bluesky, GitHub, and arXiv into a single digest
+def main(cmd, config_path, hn, rss, bsky, repo, arxiv, output):
+    """Morning briefing aggregator — HN + RSS + Bluesky + GitHub + arXiv in one digest.
 
-    Special commands: briefsnap introspect | briefsnap skill
+    Run with no args for a default HN top-5 digest.
+    Pass --config briefsnap.toml for a full configured digest.
+
+    \b
+    Special commands:
+      briefsnap introspect   ACLI-compliant JSON description
+      briefsnap skill        agentskills.io SKILL.md
     """
-    if sources in _ACLI_COMMANDS:
-        _handle_acli_command(sources)
+    if cmd in _ACLI_COMMANDS:
+        if cmd == "introspect":
+            print(get_introspect_json())
+        else:
+            print(get_skill_md())
         sys.exit(0)
 
-    items = fetch(sources, limit=limit)
+    cfg = load_config(
+        config_path=config_path,
+        hn_limit=hn,
+        rss_urls=rss,
+        bsky_handles=bsky,
+        repos=repo,
+        arxiv_queries=arxiv,
+    )
 
-    if output == "text":
-        click.echo(to_text(items))
-    elif output == "json":
-        click.echo(to_json(items))
-    elif output == "table":
-        click.echo(to_table(items))
+    results = run_digest(cfg)
+
+    if output == "json":
+        click.echo(to_json(results, cfg))
     else:
-        click.echo(to_csv(items), nl=False)
+        click.echo(to_text(results, cfg))
 
 
 if __name__ == "__main__":
