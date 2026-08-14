@@ -1,111 +1,124 @@
-"""briefsnap core — the one file you actually need to write.
+"""briefsnap core — parallel compositor of all five snap tools.
 
-The Item model and all four formatters below are DONE and tested. The only
-function left to implement is `fetch()`: make the real request to morning briefings aggregated from multiple data sources,
-turn each result into an `Item`, and return the list. Delete the
-NotImplementedError once it works.
+Fetches HN, RSS feeds, Bluesky handles, GitHub repos, and arXiv papers
+in parallel (ThreadPoolExecutor) and formats a combined morning digest.
 """
 from __future__ import annotations
 
-import csv
-import io
 import json
-from dataclasses import dataclass, asdict, field
-from datetime import datetime
-from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import asdict
+from datetime import date
+from typing import Any
 
-import httpx
-
-
-@dataclass
-class Item:
-    """One thing from morning briefings aggregated from multiple data sources — a story, post, repo event, feed entry…"""
-
-    title: str
-    url: str
-    author: str = ""
-    score: int = 0
-    comments: int = 0
-    created_at: Optional[datetime] = None
-    body: str = ""
-
-    def _created_iso(self) -> str:
-        return self.created_at.isoformat() if self.created_at else ""
+import hackersnap.core as hn_core
+import feedsnap.core as feed_core
+import bskysnap.core as bsky_core
+import reposnap.core as repo_core
+import arxivsnap.core as arxiv_core
 
 
-# --------------------------------------------------------------------------- #
-# fetch — THE PART YOU WRITE. Everything below fetch is already finished.
-# --------------------------------------------------------------------------- #
-def fetch(sources: Optional[str] = None, limit: int = 10) -> list[Item]:
-    """Fetch up to `limit` items from morning briefings aggregated from multiple data sources and return them as Items.
+def run_digest(cfg: dict) -> dict[str, Any]:
+    """Fetch all enabled sources in parallel.
 
-    Replace the body below with a real request. `httpx` is already a dependency:
-
-        with httpx.Client(timeout=15, headers={"User-Agent": "briefsnap"}) as c:
-            data = c.get("https://...").json()
-        return [Item(title=..., url=..., score=...) for row in data[:limit]]
+    Returns dict mapping source key -> results (list[Item] or dict for reposnap).
+    One failing source does NOT kill the digest — it falls back to [].
     """
-    raise NotImplementedError(
-        "briefsnap.fetch() is a scaffold stub — implement the real morning briefings aggregated from multiple data sources request."
-    )
+    tasks: list[tuple] = []
 
-
-# --------------------------------------------------------------------------- #
-# formatters — DONE. Tested by tests/test_formatter.py. Do not rewrite.
-# --------------------------------------------------------------------------- #
-def to_text(items: list[Item], source: str = "briefsnap") -> str:
-    if not items:
-        return f"# {source}\n\nNo items found."
-    lines = [f"# {source}", ""]
-    for i, it in enumerate(items, 1):
-        meta = []
-        if it.score:
-            meta.append(f"{it.score} points")
-        if it.comments:
-            meta.append(f"{it.comments} comments")
-        if it.author:
-            meta.append(f"by {it.author}")
-        suffix = f"  ({' · '.join(meta)})" if meta else ""
-        lines.append(f"{i}. **{it.title}**{suffix}")
-        if it.url:
-            lines.append(f"   {it.url}")
-        if it.body:
-            lines.append(f"   {it.body}")
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def to_json(items: list[Item], source: str = "briefsnap") -> str:
-    payload = {
-        "source": source,
-        "count": len(items),
-        "items": [
-            {**asdict(it), "created_at": it._created_iso()} for it in items
-        ],
-    }
-    return json.dumps(payload, indent=2, ensure_ascii=False)
-
-
-def to_table(items: list[Item], source: str = "briefsnap") -> str:
-    if not items:
-        return "No items found."
-    header = "| # | Title | Score | Comments | Author |"
-    sep = "|---|-------|-------|----------|--------|"
-    rows = [header, sep]
-    for i, it in enumerate(items, 1):
-        title = it.title.replace("|", "\\|")
-        rows.append(
-            f"| {i} | {title} | {it.score} | {it.comments} | {it.author} |"
+    if cfg.get("hackersnap", {}).get("enabled"):
+        hn = cfg["hackersnap"]
+        tasks.append(
+            ("hn", hn_core.fetch, [hn.get("type", "top")], {"limit": hn.get("limit", 5)})
         )
-    return "\n".join(rows)
+
+    for feed_cfg in cfg.get("feedsnap", {}).get("feeds", []):
+        url   = feed_cfg["url"]   if isinstance(feed_cfg, dict) else feed_cfg
+        limit = feed_cfg.get("limit", 5) if isinstance(feed_cfg, dict) else 5
+        tasks.append((f"feed:{url}", feed_core.fetch, [url], {"limit": limit}))
+
+    for h_cfg in cfg.get("bskysnap", {}).get("handles", []):
+        handle = h_cfg["handle"] if isinstance(h_cfg, dict) else h_cfg
+        limit  = h_cfg.get("limit", 5) if isinstance(h_cfg, dict) else 5
+        tasks.append((f"bsky:{handle}", bsky_core.fetch, [handle], {"limit": limit}))
+
+    for r_cfg in cfg.get("reposnap", {}).get("repos", []):
+        repo  = r_cfg["repo"]  if isinstance(r_cfg, dict) else r_cfg
+        limit = r_cfg.get("limit", 5) if isinstance(r_cfg, dict) else 5
+        tasks.append((f"repo:{repo}", repo_core.fetch, [repo], {"limit": limit}))
+
+    for q_cfg in cfg.get("arxivsnap", {}).get("queries", []):
+        query = q_cfg["query"] if isinstance(q_cfg, dict) else q_cfg
+        limit = q_cfg.get("limit", 3) if isinstance(q_cfg, dict) else 3
+        tasks.append((f"arxiv:{query}", arxiv_core.fetch, [query], {"limit": limit}))
+
+    if not tasks:
+        return {}
+
+    results: dict[str, Any] = {}
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(fn, *args, **kwargs): key
+            for key, fn, args, kwargs in tasks
+        }
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                results[key] = future.result()
+            except Exception:
+                results[key] = []  # graceful degradation
+
+    return results
 
 
-def to_csv(items: list[Item], source: str = "briefsnap") -> str:
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["title", "url", "author", "score", "comments", "created_at"])
-    for it in items:
-        w.writerow(
-            [it.title, it.url, it.author, it.score, it.comments, it._created_iso()]
-        )
-    return buf.getvalue()
+def to_text(results: dict, cfg: dict) -> str:  # noqa: ARG001
+    """Format all results as a combined markdown morning briefing."""
+    today = date.today().strftime("%B %d, %Y")
+    sections = [f"# Morning Briefing — {today}", ""]
+
+    for key, items in results.items():
+        if not items:
+            continue
+        if key == "hn":
+            sections.append("## Hacker News\n")
+            sections.append(hn_core.to_text(items))
+        elif key.startswith("feed:"):
+            sections.append("## RSS Feed\n")
+            sections.append(feed_core.to_text(items))
+        elif key.startswith("bsky:"):
+            handle = key[5:]
+            sections.append(f"## Bluesky @{handle}\n")
+            sections.append(bsky_core.to_text(items))
+        elif key.startswith("repo:"):
+            repo_name = key[5:]
+            sections.append(f"## GitHub: {repo_name}\n")
+            sections.append(repo_core.to_text(items))
+        elif key.startswith("arxiv:"):
+            query = key[6:]
+            sections.append(f"## arXiv: {query}\n")
+            sections.append(arxiv_core.to_text(items))
+        sections.append("")
+
+    return "\n".join(sections)
+
+
+def to_json(results: dict, cfg: dict) -> str:  # noqa: ARG001
+    """Format all results as JSON with a date envelope."""
+    today = date.today().isoformat()
+    output: dict = {"date": today, "sources": {}}
+
+    for key, items in results.items():
+        if isinstance(items, list):
+            serialized = []
+            for it in items:
+                try:
+                    serialized.append(asdict(it))
+                except Exception:
+                    serialized.append(str(it))
+            output["sources"][key] = serialized
+        elif isinstance(items, dict):
+            output["sources"][key] = items
+        else:
+            output["sources"][key] = str(items)
+
+    return json.dumps(output, indent=2, default=str, ensure_ascii=False)
