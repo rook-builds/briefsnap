@@ -1,6 +1,19 @@
 # briefsnap
 
-Morning briefing aggregator. One command pulls Hacker News, RSS feeds, Bluesky profiles, GitHub repos, and arXiv papers — all in parallel — and formats a combined digest.
+**One command. Five data sources. Your morning in one digest.**
+
+`briefsnap` pulls Hacker News, RSS feeds, Bluesky profiles, GitHub repos, and arXiv papers in parallel and formats them as a combined morning briefing — text or JSON.
+
+```
+$ briefsnap
+# Morning Briefing — August 15, 2026
+
+## Hacker News
+
+1. **Show HN: I built a thing**  (342 points · 87 comments · by someone)
+   https://example.com/thing
+...
+```
 
 ## Install
 
@@ -8,45 +21,55 @@ Morning briefing aggregator. One command pulls Hacker News, RSS feeds, Bluesky p
 pip install briefsnap
 ```
 
-## Quick start
+Requires Python 3.10+. Pulls in the five `*snap` sibling packages automatically.
+
+## Quickstart
 
 ```bash
-# Default: HN top-5 (no config needed)
+# Default: HN top 5 stories
 briefsnap
 
-# Full digest with flags
-briefsnap --hn 5 \
-  --rss https://simonwillison.net/atom/everything/ \
-  --bsky swyx.bsky.social \
-  --repo simonw/llm \
-  --arxiv "large language models"
+# More HN stories
+briefsnap --hn 10
 
-# Load from config file
-briefsnap --config briefsnap.toml
+# Add an RSS feed
+briefsnap --rss https://simonwillison.net/atom/everything/
+
+# Follow a Bluesky handle
+briefsnap --bsky simonw.bsky.social
+
+# Watch a GitHub repo
+briefsnap --repo simonw/llm
+
+# arXiv search
+briefsnap --arxiv "LLM agents"
+
+# Mix and match
+briefsnap --hn 5 --rss https://news.ycombinator.com/rss --bsky simonw.bsky.social
 
 # JSON output
 briefsnap --output json | jq .
 ```
 
-## Config file (TOML)
+## Config file
+
+For a repeatable daily briefing, drop a `briefsnap.toml` anywhere and point at it with `--config`:
 
 ```toml
-# briefsnap.toml
-
 [hackersnap]
 enabled = true
-limit = 5
-type = "top"    # top | new | best | ask | show | job
+limit   = 5
+type    = "top"   # top / new / best / ask / show / job
 
 [feedsnap]
 feeds = [
-  { url = "https://simonwillison.net/atom/everything/", limit = 3 },
-  { url = "https://martinfowler.com/feed.atom", limit = 3 },
+  { url = "https://simonwillison.net/atom/everything/", limit = 5 },
+  { url = "https://www.joelonsoftware.com/feed/", limit = 3 },
 ]
 
 [bskysnap]
 handles = [
-  { handle = "swyx.bsky.social", limit = 5 },
+  { handle = "simonw.bsky.social", limit = 5 },
 ]
 
 [reposnap]
@@ -56,37 +79,40 @@ repos = [
 
 [arxivsnap]
 queries = [
-  { query = "large language models agents", limit = 3 },
+  { query = "LLM agents", limit = 3 },
 ]
 ```
 
-## Output formats
+```bash
+briefsnap --config briefsnap.toml
+briefsnap --config briefsnap.toml --output json
+```
 
-| Flag | Format |
-|------|--------|
-| `--output text` (default) | Markdown digest, one section per source |
-| `--output json` | JSON envelope: `{ "date": ..., "sources": { ... } }` |
-
-## Agent interface
+CLI flags override the config file — handy for one-off adjustments:
 
 ```bash
-briefsnap introspect   # ACLI-compliant JSON
+briefsnap --config briefsnap.toml --hn 10
+```
+
+## Output modes
+
+| Flag | Description |
+|------|-------------|
+| `--output text` | Markdown digest (default) |
+| `--output json` | Structured JSON with date envelope |
+
+## Agent / ACLI support
+
+```bash
+briefsnap introspect   # ACLI-compliant JSON description
 briefsnap skill        # agentskills.io SKILL.md
 ```
 
-## Data sources
+## How it works
 
-briefsnap composes five snap tools — each is also independently useful:
-
-| Tool | PyPI | Source |
-|------|------|--------|
-| [hackersnap](https://github.com/rook-builds/hackersnap) | `hackersnap` | Hacker News |
-| [feedsnap](https://github.com/rook-builds/feedsnap) | `feedsnap` | RSS/Atom feeds |
-| [bskysnap](https://github.com/rook-builds/bskysnap) | `bskysnap` | Bluesky |
-| [reposnap](https://github.com/rook-builds/reposnap) | `rook-reposnap` | GitHub repos |
-| [arxivsnap](https://github.com/rook-builds/arxivsnap) | `arxivsnap` | arXiv papers |
-
-All sources are fetched in parallel — a five-source digest takes roughly as long as the slowest single source.
+- Each source is fetched in a **separate thread** (`ThreadPoolExecutor`) — five sources run in parallel, not serially.
+- One source failing (network error, bad feed) does **not** kill the digest — it falls back to an empty section.
+- Uses [`hackersnap`](https://pypi.org/project/hackersnap/), [`feedsnap`](https://pypi.org/project/feedsnap/), [`bskysnap`](https://pypi.org/project/bskysnap/), [`rook-reposnap`](https://pypi.org/project/rook-reposnap/), and [`arxivsnap`](https://pypi.org/project/arxivsnap/) as library imports.
 
 ## License
 
