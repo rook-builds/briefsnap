@@ -53,7 +53,8 @@ def test_run_digest_hn_only():
     cfg = _base_cfg()
     cfg["hackersnap"]["enabled"] = True
     items = _mock_items(3)
-    with patch("hackersnap.core.fetch", return_value=items):
+    with patch("hackersnap.core.fetch") as mock_fetch:
+        mock_fetch.return_value = items
         results = run_digest(cfg)
     assert "hn" in results
     assert len(results["hn"]) == 3
@@ -63,7 +64,8 @@ def test_run_digest_graceful_failure():
     """If one source throws, results[key] == [] — digest keeps running."""
     cfg = _base_cfg()
     cfg["hackersnap"]["enabled"] = True
-    with patch("hackersnap.core.fetch", side_effect=RuntimeError("network down")):
+    with patch("hackersnap.core.fetch") as mock_fetch:
+        mock_fetch.side_effect = RuntimeError("network down")
         results = run_digest(cfg)
     assert results.get("hn") == []
 
@@ -73,7 +75,8 @@ def test_run_digest_rss_source():
     cfg["feedsnap"]["enabled"] = True
     cfg["feedsnap"]["feeds"] = [{"url": "https://example.com/rss", "limit": 3}]
     items = _mock_items(3)
-    with patch("feedsnap.core.fetch", return_value=items):
+    with patch("feedsnap.core.fetch") as mock_fetch:
+        mock_fetch.return_value = items
         results = run_digest(cfg)
     assert "feed:https://example.com/rss" in results
 
@@ -83,7 +86,8 @@ def test_run_digest_bsky_source():
     cfg["bskysnap"]["enabled"] = True
     cfg["bskysnap"]["handles"] = [{"handle": "user.bsky.social", "limit": 3}]
     items = _mock_items(3)
-    with patch("bskysnap.core.fetch", return_value=items):
+    with patch("bskysnap.core.fetch") as mock_fetch:
+        mock_fetch.return_value = items
         results = run_digest(cfg)
     assert "bsky:user.bsky.social" in results
 
@@ -93,7 +97,8 @@ def test_run_digest_arxiv_source():
     cfg["arxivsnap"]["enabled"] = True
     cfg["arxivsnap"]["queries"] = [{"query": "LLMs", "limit": 3}]
     items = _mock_items(3)
-    with patch("arxivsnap.core.fetch", return_value=items):
+    with patch("arxivsnap.core.fetch") as mock_fetch:
+        mock_fetch.return_value = items
         results = run_digest(cfg)
     assert "arxiv:LLMs" in results
 
@@ -105,7 +110,8 @@ def test_run_digest_arxiv_source():
 def test_to_text_contains_date_header():
     cfg = _base_cfg()
     items = _mock_items(2)
-    with patch("hackersnap.core.to_text", return_value="HN content\n"):
+    with patch("hackersnap.core.to_text") as mock_txt:
+        mock_txt.return_value = "HN content\n"
         result = to_text({"hn": items}, cfg)
     assert "Morning Briefing" in result
 
@@ -113,7 +119,8 @@ def test_to_text_contains_date_header():
 def test_to_text_hn_section():
     cfg = _base_cfg()
     items = _mock_items(2)
-    with patch("hackersnap.core.to_text", return_value="HN content\n"):
+    with patch("hackersnap.core.to_text") as mock_txt:
+        mock_txt.return_value = "HN content\n"
         result = to_text({"hn": items}, cfg)
     assert "Hacker News" in result
     assert "HN content" in result
@@ -129,7 +136,8 @@ def test_to_text_skips_empty_source():
 def test_to_text_rss_section():
     cfg = _base_cfg()
     items = _mock_items(2)
-    with patch("feedsnap.core.to_text", return_value="RSS content\n"):
+    with patch("feedsnap.core.to_text") as mock_txt:
+        mock_txt.return_value = "RSS content\n"
         result = to_text({"feed:https://example.com/rss": items}, cfg)
     assert "RSS Feed" in result
 
@@ -137,7 +145,8 @@ def test_to_text_rss_section():
 def test_to_text_bsky_section():
     cfg = _base_cfg()
     items = _mock_items(2)
-    with patch("bskysnap.core.to_text", return_value="Bsky content\n"):
+    with patch("bskysnap.core.to_text") as mock_txt:
+        mock_txt.return_value = "Bsky content\n"
         result = to_text({"bsky:user.bsky.social": items}, cfg)
     assert "Bluesky @user.bsky.social" in result
 
@@ -145,7 +154,8 @@ def test_to_text_bsky_section():
 def test_to_text_arxiv_section():
     cfg = _base_cfg()
     items = _mock_items(2)
-    with patch("arxivsnap.core.to_text", return_value="arXiv content\n"):
+    with patch("arxivsnap.core.to_text") as mock_txt:
+        mock_txt.return_value = "arXiv content\n"
         result = to_text({"arxiv:LLMs": items}, cfg)
     assert "arXiv: LLMs" in result
 
